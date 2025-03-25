@@ -17,7 +17,7 @@ logger.handlers = [handler]
 # 從環境變數中讀取敏感資訊
 API_KEY = os.getenv("SHIOAJI_API_KEY")
 SECRET_KEY = os.getenv("SHIOAJI_SECRET_KEY")
-CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/app/Sinopac.pfx")  # 預設路徑，待上傳後確認
+CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/app/Sinopac.pfx")  # 預設路徑，與上傳位置一致
 CA_PASSWORD = os.getenv("SHIOAJI_CA_PASSWORD")
 PERSON_ID = os.getenv("SHIOAJI_PERSON_ID")
 
