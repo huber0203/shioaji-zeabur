@@ -3,11 +3,10 @@ import shioaji as sj
 import json
 import logging
 import os
-import shutil
 
 app = Flask(__name__)
 
-# 手動配置 Shioaji 的日誌，寫入 /tmp/shioaji.log
+# 設置日誌，寫入 /tmp/shioaji.log
 logger = logging.getLogger('shioaji')
 logger.setLevel(logging.INFO)
 handler = logging.FileHandler('/tmp/shioaji.log')
@@ -18,21 +17,49 @@ logger.handlers = [handler]
 # 從環境變數中讀取敏感資訊
 API_KEY = os.getenv("SHIOAJI_API_KEY")
 SECRET_KEY = os.getenv("SHIOAJI_SECRET_KEY")
-CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/tmp/Sinopac.pfx")  # 使用 /tmp/Sinopac.pfx
+CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/tmp/Sinopac.pfx")
 CA_PASSWORD = os.getenv("SHIOAJI_CA_PASSWORD")
 PERSON_ID = os.getenv("SHIOAJI_PERSON_ID")
 
-# 檢查是否缺少必要的環境變數
-if not all([API_KEY, SECRET_KEY, CA_PASSWORD, PERSON_ID]):
-    raise ValueError("Missing required environment variables: SHIOAJI_API_KEY, SHIOAJI_SECRET_KEY, SHIOAJI_CA_PASSWORD, SHIOAJI_PERSON_ID")
+# 檢查環境變數是否存在
+missing_vars = []
+if not API_KEY:
+    missing_vars.append("SHIOAJI_API_KEY")
+if not SECRET_KEY:
+    missing_vars.append("SHIOAJI_SECRET_KEY")
+if not CA_PASSWORD:
+    missing_vars.append("SHIOAJI_CA_PASSWORD")
+if not PERSON_ID:
+    missing_vars.append("SHIOAJI_PERSON_ID")
 
-# 確認憑證檔案存在
-if not os.path.exists(CA_PATH):
-    raise FileNotFoundError(f"CA file not found at {CA_PATH}")
+if missing_vars:
+    error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
+    logger.error(error_msg)
+else:
+    # 檢查憑證檔案是否存在
+    if not os.path.exists(CA_PATH):
+        error_msg = f"CA file not found at {CA_PATH}"
+        logger.error(error_msg)
+    else:
+        logger.info(f"CA file found at {CA_PATH}")
 
 @app.route('/quote', methods=['POST'])
 def get_quote():
     try:
+        # 檢查環境變數
+        if missing_vars:
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": f"Missing required environment variables: {', '.join(missing_vars)}"})
+            }
+
+        # 檢查憑證檔案
+        if not os.path.exists(CA_PATH):
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": f"CA file not found at {CA_PATH}"})
+            }
+
         data = request.get_json()
         api_key = data.get("api_key", API_KEY)
         secret_key = data.get("secret_key", SECRET_KEY)
