@@ -149,10 +149,11 @@ def quote():
 
         logger.info(f"Received quote request: stock_code={stock_code}")
 
-        # 查詢股票行情
+        # 查詢股票行情（使用正確的 Shioaji API 方法）
         logger.info(f"Fetching quote for stock_code={stock_code}")
         contract = api.Contracts.Stocks.TSE[stock_code]
-        quote = api.quote(contract)
+        # 使用 api.snapshots 查詢快照資料
+        quote = api.snapshots([contract])[0]  # snapshots 返回一個列表，取第一個元素
         logger.info(f"Quote fetched successfully: {json.dumps(quote, default=str)}")
 
         # 返回結果
