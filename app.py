@@ -3,6 +3,7 @@ import shioaji as sj
 import json
 import logging
 import os
+import shutil
 
 app = Flask(__name__)
 
@@ -17,13 +18,17 @@ logger.handlers = [handler]
 # 從環境變數中讀取敏感資訊
 API_KEY = os.getenv("SHIOAJI_API_KEY")
 SECRET_KEY = os.getenv("SHIOAJI_SECRET_KEY")
-CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/app/Sinopac.pfx")  # 預設路徑，與上傳位置一致
+CA_PATH = os.getenv("SHIOAJI_CA_PATH", "/tmp/Sinopac.pfx")  # 使用 /tmp/Sinopac.pfx
 CA_PASSWORD = os.getenv("SHIOAJI_CA_PASSWORD")
 PERSON_ID = os.getenv("SHIOAJI_PERSON_ID")
 
 # 檢查是否缺少必要的環境變數
 if not all([API_KEY, SECRET_KEY, CA_PASSWORD, PERSON_ID]):
     raise ValueError("Missing required environment variables: SHIOAJI_API_KEY, SHIOAJI_SECRET_KEY, SHIOAJI_CA_PASSWORD, SHIOAJI_PERSON_ID")
+
+# 確認憑證檔案存在
+if not os.path.exists(CA_PATH):
+    raise FileNotFoundError(f"CA file not found at {CA_PATH}")
 
 @app.route('/quote', methods=['POST'])
 def get_quote():
