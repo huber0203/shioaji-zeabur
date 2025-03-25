@@ -17,7 +17,7 @@ logger.handlers = [handler]
 @app.route('/quote', methods=['POST'])
 def get_quote():
     data = request.get_json()
-    api = sj.Shioaji(simulation=True)
+    api = sj.Shioaji(simulation=False)
     api_key = data.get("api_key", "你的API Key")
     secret_key = data.get("secret_key", "你的Secret Key")
     stock_code = data.get("stock_code", "2330")
