@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import sys
+import base64
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -25,8 +26,37 @@ try:
 except Exception as e:
     logger.error(f"Failed to get IP address: {str(e)}")
 
+# 測試網路連線
+def test_network():
+    try:
+        socket.create_connection(("www.sinopac.com", 80), timeout=5)
+        logger.info("Network connection to Sinopac server is OK")
+    except Exception as e:
+        logger.error(f"Network connection failed: {str(e)}")
+
+test_network()
+
+# 從環境變數讀取憑證檔案（如果以 base64 形式提供）
+ca_path = "/app/Sinopac.pfx"
+ca_file_base64 = os.getenv("CA_FILE_BASE64")
+if ca_file_base64:
+    try:
+        with open(ca_path, "wb") as f:
+            f.write(base64.b64decode(ca_file_base64))
+        logger.info(f"CA file written to {ca_path} from environment variable")
+    except Exception as e:
+        logger.error(f"Failed to write CA file from base64: {str(e)}")
+
 # 全局變數，用於儲存 Shioaji API 實例
 api = None
+
+# 健康檢查端點
+@app.route('/health', methods=['GET'])
+def health():
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"message": "Service is healthy"})
+    }
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -78,7 +108,8 @@ def login():
                     "statusCode": 500,
                     "body": json.dumps({"error": error_msg})
                 }
-            logger.info(f"CA file found at {ca_path}")
+            file_size = os.path.getsize(ca_path)
+            logger.info(f"CA file found at {ca_path}, size: {file_size} bytes")
 
         logger.info(f"Received login request: api_key={api_key[:4]}****, secret_key={secret_key[:4]}****")
 
@@ -89,19 +120,27 @@ def login():
         # 啟用憑證（僅在正式環境需要）
         if not simulation_mode:
             logger.info(f"Activating CA with ca_path={ca_path}, person_id={person_id}")
-            result = api.activate_ca(
-                ca_path=ca_path,
-                ca_passwd=ca_password,
-                person_id=person_id
-            )
-            if not result:
-                error_msg = "Failed to activate CA"
+            try:
+                result = api.activate_ca(
+                    ca_path=ca_path,
+                    ca_passwd=ca_password,
+                    person_id=person_id
+                )
+                if not result:
+                    error_msg = "Failed to activate CA"
+                    logger.error(error_msg)
+                    return {
+                        "statusCode": 500,
+                        "body": json.dumps({"error": error_msg})
+                    }
+                logger.info("CA activated successfully")
+            except Exception as e:
+                error_msg = f"Error in activate_ca: {str(e)}"
                 logger.error(error_msg)
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": error_msg})
                 }
-            logger.info("CA activated successfully")
 
         # 登入 Shioaji
         logger.info("Logging into Shioaji")
