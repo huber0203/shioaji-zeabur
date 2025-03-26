@@ -35,12 +35,8 @@ def login():
         if not data:
             error_msg = "Request body is empty"
             logger.error(error_msg)
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": error_msg})
-            }
+            return {"statusCode": 400, "body": json.dumps({"error": error_msg})}
 
-        # 從 body 中提取敏感資訊
         api_key = data.get("api_key")
         secret_key = data.get("secret_key")
         ca_path = data.get("ca_path", "/app/Sinopac.pfx")
@@ -48,7 +44,6 @@ def login():
         person_id = data.get("person_id")
         simulation_mode = data.get("simulation_mode", False)
 
-        # 檢查必要參數
         missing_params = []
         if not api_key:
             missing_params.append("api_key")
@@ -63,56 +58,36 @@ def login():
         if missing_params:
             error_msg = f"Missing required parameters: {', '.join(missing_params)}"
             logger.error(error_msg)
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": error_msg})
-            }
+            return {"statusCode": 400, "body": json.dumps({"error": error_msg})}
 
-        # 檢查憑證檔案（僅在正式環境需要）
         if not simulation_mode:
             if not os.path.exists(ca_path):
                 error_msg = f"CA file not found at {ca_path}"
                 logger.error(error_msg)
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps({"error": error_msg})
-                }
+                return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
             logger.info(f"CA file found at {ca_path}")
 
         logger.info(f"Received login request: api_key={api_key[:4]}****, secret_key={secret_key[:4]}****")
-
-        # 初始化 Shioaji
         logger.info(f"Initializing Shioaji with simulation={simulation_mode}")
         api = sj.Shioaji(simulation=simulation_mode)
 
-        # 啟用憑證（僅在正式環境需要）
         if not simulation_mode:
             logger.info(f"Activating CA with ca_path={ca_path}, person_id={person_id}")
-            result = api.activate_ca(
-                ca_path=ca_path,
-                ca_passwd=ca_password,
-                person_id=person_id
-            )
+            result = api.activate_ca(ca_path=ca_path, ca_passwd=ca_password, person_id=person_id)
             if not result:
                 error_msg = "Failed to activate CA"
                 logger.error(error_msg)
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps({"error": error_msg})
-                }
+                return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
             logger.info("CA activated successfully")
 
-        # 登入 Shioaji
         logger.info("Logging into Shioaji")
         accounts = api.login(api_key=api_key, secret_key=secret_key)
         logger.info(f"Login successful, accounts: {json.dumps(accounts, default=str)}")
 
-        # 添加 fetch_contracts 確保商品合約資料已下載
         logger.info("Fetching contracts data")
         api.fetch_contracts()
         logger.info("Contracts data fetched successfully")
 
-        # 返回結果
         return {
             "statusCode": 200,
             "body": json.dumps({"message": "Login successful", "accounts": accounts}, default=str)
@@ -123,10 +98,7 @@ def login():
         logger.error(error_msg)
         logger.error(f"Exception type: {type(e).__name__}")
         logger.error(f"Exception traceback: {sys.exc_info()}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": error_msg})
-        }
+        return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
 
 @app.route('/quote', methods=['POST'])
 def quote():
@@ -136,32 +108,32 @@ def quote():
         if not data:
             error_msg = "Request body is empty"
             logger.error(error_msg)
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": error_msg})
-            }
+            return {"statusCode": 400, "body": json.dumps({"error": error_msg})}
 
-        stock_code = data.get("stock_code", "2330")  # 從 body 中提取 stock_code
+        stock_code = data.get("stock_code", "2330")
 
-        # 檢查 API 是否已初始化
         if api is None:
             error_msg = "Shioaji API not initialized. Please login first."
             logger.error(error_msg)
-            return {
-                "statusCode": 500,
-                "body": json.dumps({"error": error_msg})
-            }
+            return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
 
         logger.info(f"Received quote request: stock_code={stock_code}")
 
-        # 查詢股票行情（使用正確的 Shioaji API 方法）
+        # 嘗試從 TSE 查詢合約，若失敗則記錄詳細錯誤
+        logger.info(f"Fetching contract for stock_code={stock_code}")
+        try:
+            contract = api.Contracts.Stocks.TSE[stock_code]
+            logger.info(f"Contract found: {json.dumps(contract.__dict__, default=str)}")
+        except KeyError as ke:
+            error_msg = f"Contract not found for stock_code={stock_code} in TSE"
+            logger.error(error_msg)
+            return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
+
+        # 查詢快照資料
         logger.info(f"Fetching quote for stock_code={stock_code}")
-        contract = api.Contracts.Stocks.TSE[stock_code]
-        # 使用 api.snapshots 查詢快照資料
-        quote = api.snapshots([contract])[0]  # snapshots 返回一個列表，取第一個元素
+        quote = api.snapshots([contract])[0]
         logger.info(f"Quote fetched successfully: {json.dumps(quote, default=str)}")
 
-        # 返回結果
         return {
             "statusCode": 200,
             "body": json.dumps({"message": "Quote fetched", "quote": quote}, default=str)
@@ -172,10 +144,33 @@ def quote():
         logger.error(error_msg)
         logger.error(f"Exception type: {type(e).__name__}")
         logger.error(f"Exception traceback: {sys.exc_info()}")
+        return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
+
+@app.route('/contracts', methods=['GET'])
+def get_contracts():
+    global api
+    try:
+        if api is None:
+            error_msg = "Shioaji API not initialized. Please login first."
+            logger.error(error_msg)
+            return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
+
+        # 獲取 TSE 股票合約資料並轉為可序列化的格式
+        logger.info("Fetching TSE contracts")
+        tse_contracts = {k: v.__dict__ for k, v in api.Contracts.Stocks.TSE.items()}
+        logger.info("TSE contracts fetched successfully")
+
         return {
-            "statusCode": 500,
-            "body": json.dumps({"error": error_msg})
+            "statusCode": 200,
+            "body": json.dumps({"message": "Contracts fetched", "tse_contracts": tse_contracts}, default=str)
         }
+
+    except Exception as e:
+        error_msg = f"Error in contracts: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception traceback: {sys.exc_info()}")
+        return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
