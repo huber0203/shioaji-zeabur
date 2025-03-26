@@ -107,6 +107,11 @@ def login():
         accounts = api.login(api_key=api_key, secret_key=secret_key)
         logger.info(f"Login successful, accounts: {json.dumps(accounts, default=str)}")
 
+        # 添加 fetch_contracts 確保商品合約資料已下載
+        logger.info("Fetching contracts data")
+        api.fetch_contracts()
+        logger.info("Contracts data fetched successfully")
+
         # 返回結果
         return {
             "statusCode": 200,
