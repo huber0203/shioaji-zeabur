@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import sys
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -107,6 +108,11 @@ def login():
         accounts = api.login(api_key=api_key, secret_key=secret_key)
         logger.info(f"Login successful, accounts: {json.dumps(accounts, default=str)}")
 
+        # 強制下載商品檔
+        logger.info("Fetching contracts")
+        api.fetch_contracts(contract_download=True)
+        logger.info("Contracts fetched successfully")
+
         # 返回結果
         return {
             "statusCode": 200,
@@ -137,6 +143,7 @@ def quote():
             }
 
         stock_code = data.get("stock_code", "2330")  # 從 body 中提取 stock_code
+        market = data.get("market", "TSE")  # 從 body 中提取市場（預設 TSE）
 
         # 檢查 API 是否已初始化
         if api is None:
@@ -147,23 +154,133 @@ def quote():
                 "body": json.dumps({"error": error_msg})
             }
 
-        logger.info(f"Received quote request: stock_code={stock_code}")
+        logger.info(f"Received quote request: stock_code={stock_code}, market={market}")
 
-        # 查詢股票行情（使用正確的 Shioaji API 方法）
-        logger.info(f"Fetching quote for stock_code={stock_code}")
-        contract = api.Contracts.Stocks.TSE[stock_code]
-        # 使用 api.snapshots 查詢快照資料
-        quote = api.snapshots([contract])[0]  # snapshots 返回一個列表，取第一個元素
-        logger.info(f"Quote fetched successfully: {json.dumps(quote, default=str)}")
+        # 查詢股票行情（根據市場選擇 TSE 或 OTC）
+        logger.info(f"Fetching contract for stock_code={stock_code}, market={market}")
+        if market == "TSE":
+            contract = api.Contracts.Stocks.TSE[stock_code]
+        elif market == "OTC":
+            contract = api.Contracts.Stocks.OTC[stock_code]
+        else:
+            error_msg = f"Unsupported market: {market}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        # 檢查契約是否有效
+        if contract is None:
+            error_msg = f"Invalid stock code: {stock_code} in market {market}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        # 查詢即時行情快照
+        logger.info(f"Fetching snapshot for stock_code={stock_code}")
+        snapshots = api.snapshots([contract])  # 即時快照資料
+        if not snapshots:  # 檢查是否為空列表
+            error_msg = f"No snapshot data available for stock_code={stock_code}. The stock may be suspended or have no recent trades."
+            logger.error(error_msg)
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        snapshot = snapshots[0]  # 取第一個元素
+        logger.info(f"Snapshot fetched: {json.dumps(snapshot, default=str)}")
 
         # 返回結果
         return {
             "statusCode": 200,
-            "body": json.dumps({"message": "Quote fetched", "quote": quote}, default=str)
+            "body": json.dumps({"message": "Quote fetched", "quote": snapshot}, default=str)
         }
 
     except Exception as e:
         error_msg = f"Error in quote: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception traceback: {sys.exc_info()}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": error_msg})
+        }
+
+@app.route('/kbars', methods=['POST'])
+def kbars():
+    global api
+    try:
+        data = request.get_json()
+        if not data:
+            error_msg = "Request body is empty"
+            logger.error(error_msg)
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        stock_code = data.get("stock_code", "2330")  # 從 body 中提取 stock_code
+        market = data.get("market", "TSE")  # 從 body 中提取市場（預設 TSE）
+        timeframe = data.get("timeframe", "1Min")  # K 棒時間框架（預設 1 分鐘）
+        minutes = data.get("minutes", 2)  # 查詢前幾分鐘的 K 棒（預設 2 分鐘）
+
+        # 檢查 API 是否已初始化
+        if api is None:
+            error_msg = "Shioaji API not initialized. Please login first."
+            logger.error(error_msg)
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        logger.info(f"Received kbars request: stock_code={stock_code}, market={market}, timeframe={timeframe}, minutes={minutes}")
+
+        # 查詢歷史 K 棒（根據市場選擇 TSE 或 OTC）
+        logger.info(f"Fetching contract for stock_code={stock_code}, market={market}")
+        if market == "TSE":
+            contract = api.Contracts.Stocks.TSE[stock_code]
+        elif market == "OTC":
+            contract = api.Contracts.Stocks.OTC[stock_code]
+        else:
+            error_msg = f"Unsupported market: {market}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        # 檢查契約是否有效
+        if contract is None:
+            error_msg = f"Invalid stock code: {stock_code} in market {market}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": error_msg})
+            }
+
+        # 查詢歷史 K 棒
+        logger.info(f"Fetching kbars for stock_code={stock_code}")
+        end_time = datetime.now()
+        start_time = end_time - timedelta(minutes=minutes)
+        kbars = api.kbars(
+            contract=contract,
+            start=start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            end=end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            timeframe=timeframe
+        )
+        logger.info(f"Kbars fetched: {json.dumps(kbars, default=str)}")
+
+        # 返回結果
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"message": "Kbars fetched", "kbars": kbars}, default=str)
+        }
+
+    except Exception as e:
+        error_msg = f"Error in kbars: {str(e)}"
         logger.error(error_msg)
         logger.error(f"Exception type: {type(e).__name__}")
         logger.error(f"Exception traceback: {sys.exc_info()}")
