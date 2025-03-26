@@ -119,18 +119,25 @@ def quote():
 
         logger.info(f"Received quote request: stock_code={stock_code}")
 
-        # 嘗試從 TSE 查詢合約，若失敗則記錄詳細錯誤
-        logger.info(f"Fetching contract for stock_code={stock_code}")
+        # 嘗試從 TSE 查詢合約
+        logger.info(f"Fetching contract for stock_code={stock_code} from TSE")
         contract = api.Contracts.Stocks.TSE[stock_code]
+        market = "TSE"
+
+        # 如果 TSE 中找不到，嘗試從 OTC 查詢
+        if contract is None:
+            logger.info(f"Contract not found in TSE, trying OTC for stock_code={stock_code}")
+            contract = api.Contracts.Stocks.OTC[stock_code]
+            market = "OTC"
 
         # 檢查 contract 是否為 None
         if contract is None:
-            error_msg = f"Contract not found for stock_code={stock_code} in TSE (returned None)"
+            error_msg = f"Contract not found for stock_code={stock_code} in TSE or OTC"
             logger.error(error_msg)
             return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
 
         # 記錄合約資料
-        logger.info(f"Contract found: {json.dumps(contract.__dict__, default=str)}")
+        logger.info(f"Contract found in {market}: {json.dumps(contract.__dict__, default=str)}")
 
         # 查詢快照資料
         logger.info(f"Fetching quote for stock_code={stock_code}")
@@ -139,11 +146,15 @@ def quote():
 
         return {
             "statusCode": 200,
-            "body": json.dumps({"message": "Quote fetched", "quote": quote}, default=str)
+            "body": json.dumps({
+                "message": "Quote fetched",
+                "quote": quote,
+                "market": market
+            }, default=str)
         }
 
     except KeyError as ke:
-        error_msg = f"Contract not found for stock_code={stock_code} in TSE (KeyError: {str(ke)})"
+        error_msg = f"Contract not found for stock_code={stock_code} in TSE or OTC (KeyError: {str(ke)})"
         logger.error(error_msg)
         return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
     except Exception as e:
