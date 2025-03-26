@@ -121,13 +121,16 @@ def quote():
 
         # 嘗試從 TSE 查詢合約，若失敗則記錄詳細錯誤
         logger.info(f"Fetching contract for stock_code={stock_code}")
-        try:
-            contract = api.Contracts.Stocks.TSE[stock_code]
-            logger.info(f"Contract found: {json.dumps(contract.__dict__, default=str)}")
-        except KeyError as ke:
-            error_msg = f"Contract not found for stock_code={stock_code} in TSE"
+        contract = api.Contracts.Stocks.TSE[stock_code]
+
+        # 檢查 contract 是否為 None
+        if contract is None:
+            error_msg = f"Contract not found for stock_code={stock_code} in TSE (returned None)"
             logger.error(error_msg)
             return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
+
+        # 記錄合約資料
+        logger.info(f"Contract found: {json.dumps(contract.__dict__, default=str)}")
 
         # 查詢快照資料
         logger.info(f"Fetching quote for stock_code={stock_code}")
@@ -139,6 +142,10 @@ def quote():
             "body": json.dumps({"message": "Quote fetched", "quote": quote}, default=str)
         }
 
+    except KeyError as ke:
+        error_msg = f"Contract not found for stock_code={stock_code} in TSE (KeyError: {str(ke)})"
+        logger.error(error_msg)
+        return {"statusCode": 500, "body": json.dumps({"error": error_msg})}
     except Exception as e:
         error_msg = f"Error in quote: {str(e)}"
         logger.error(error_msg)
@@ -157,12 +164,21 @@ def get_contracts():
 
         # 獲取 TSE 股票合約資料並轉為可序列化的格式
         logger.info("Fetching TSE contracts")
-        tse_contracts = {k: v.__dict__ for k, v in api.Contracts.Stocks.TSE.items()}
+        tse_contracts = {k: v.__dict__ if v is not None else None for k, v in api.Contracts.Stocks.TSE.items()}
         logger.info("TSE contracts fetched successfully")
+
+        # 額外記錄 OTC 合約資料
+        logger.info("Fetching OTC contracts")
+        otc_contracts = {k: v.__dict__ if v is not None else None for k, v in api.Contracts.Stocks.OTC.items()}
+        logger.info("OTC contracts fetched successfully")
 
         return {
             "statusCode": 200,
-            "body": json.dumps({"message": "Contracts fetched", "tse_contracts": tse_contracts}, default=str)
+            "body": json.dumps({
+                "message": "Contracts fetched",
+                "tse_contracts": tse_contracts,
+                "otc_contracts": otc_contracts
+            }, default=str)
         }
 
     except Exception as e:
